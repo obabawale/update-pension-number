@@ -7,7 +7,7 @@ import random
 from celery_app import app
 import xmlrpc.client
 from celery import group
-from connector import authenticate
+from connector.connector import authenticate
 import openpyxl
 import logging
 from dotenv import load_dotenv
@@ -29,14 +29,13 @@ ODOO_URL = os.getenv("ODOO_URL", "http://localhost:8069")
 ODOO_DB = os.getenv("ODOO_DB", "naseni")
 ODOO_USERNAME = os.getenv("ODOO_USERNAME", "admin")
 ODOO_PASSWORD = os.getenv("ODOO_PASSWORD", "nas123@")
-CHUNK_SIZE = int(os.getenv("CHUNK_SIZE", 50))
-MODEL_NAME = "hr.employee"
+MODEL = "hr.employee"
 REDIS_URL = os.getenv("CELERY_BROKER_URL", "redis://redis:6379/0")
-REDIS_PROGRESS_KEY = "pen-update:hr.employee:progress"
-REDIS_SUCCESS_LIST = "pen-update:hr.employee:success_records"
-REDIS_FAILURE_LIST = "pen-update:hr.employee:failed_records"
-REDIS_NOT_FOUND_LIST = "pen-update:hr.employee:not_found_records"
-CHUNK_SIZE = 50
+REDIS_PROGRESS_KEY = f"pen-update:{MODEL}:progress"
+REDIS_SUCCESS_LIST = f"pen-update:{MODEL}:success_records"
+REDIS_FAILURE_LIST = f"pen-update:{MODEL}:failed_records"
+REDIS_NOT_FOUND_LIST = f"pen-update:{MODEL}:not_found_records"
+CHUNK_SIZE = int(os.getenv("CHUNK_SIZE", 50))
 redis_client = None
 
 
@@ -50,7 +49,7 @@ def get_redis_client():
 def splittor(rs):
     chunks = []
     for idx in range(0, len(rs), CHUNK_SIZE):
-        sub = rs[idx: idx + CHUNK_SIZE]
+        sub = rs[idx : idx + CHUNK_SIZE]
         chunks.append(sub)
     return chunks
 
@@ -58,8 +57,7 @@ def splittor(rs):
 def try_connect_with_retry(attempts=10, initial_delay=1, max_delay=30):
     for attempt in range(1, attempts + 1):
         try:
-            return authenticate(
-                ODOO_URL, ODOO_DB, ODOO_USERNAME, ODOO_PASSWORD)
+            return authenticate(ODOO_URL, ODOO_DB, ODOO_USERNAME, ODOO_PASSWORD)
         except (
             socket.gaierror,
             ConnectionError,
@@ -83,8 +81,7 @@ def process_chunk(self, chunk_rows):
 
     def log_memory_usage(note=""):
         process = psutil.Process(os.getpid())
-        _logger.info(
-            f"[Memory] {note} - {process.memory_info().rss / 1024**2:.2f} MB")
+        _logger.info(f"[Memory] {note} - {process.memory_info().rss / 1024**2:.2f} MB")
 
     for idx, record in enumerate(chunk_rows, start=1):
         log_memory_usage(f"Before processing record {idx}")
@@ -93,13 +90,12 @@ def process_chunk(self, chunk_rows):
             continue
 
         try:
-            _logger.info(
-                f"employee id: , {record[0]}, update vals: , {record[-1]}")
+            _logger.info(f"employee id: , {record[0]}, update vals: , {record[-1]}")
             models.execute_kw(
                 db,
                 uid,
                 password,
-                "hr.employee",
+                MODEL,
                 "write",
                 [[int(record[0])], record[-1]],
             )
@@ -118,10 +114,7 @@ def process_chunk(self, chunk_rows):
 
 @app.task
 def main():
-    uid, models, db, password = authenticate(
-        ODOO_URL, ODOO_DB, ODOO_USERNAME, ODOO_PASSWORD
-    )
-
+    uid, models, db, password = try_connect_with_retry()
     wb = openpyxl.load_workbook("./data/pension_data.xlsx", read_only=True)
     sheet = wb.active
 
@@ -130,8 +123,7 @@ def main():
         row
         for row in all_rows_iter
         if any(
-            cell is not None and (
-                not (isinstance(cell, str) and cell.strip() == ""))
+            cell is not None and (not (isinstance(cell, str) and cell.strip() == ""))
             for cell in row
         )
     ]
@@ -140,8 +132,7 @@ def main():
 
     for _, IPPIS_NO, NAME, PEN_NUMBER in all_rows[:10]:
         if IPPIS_NO is None:
-            _logger.warning(
-                f"Skipping row with missing employee number: {NAME}")
+            _logger.warning(f"Skipping row with missing employee number: {NAME}")
             continue
 
         try:
@@ -149,7 +140,7 @@ def main():
                 db,
                 uid,
                 password,
-                "hr.employee",
+                MODEL,
                 "search",
                 [[["employee_no", "=", str(IPPIS_NO).strip()]]],
             )
@@ -164,7 +155,7 @@ def main():
             db,
             uid,
             password,
-            "hr.employee",
+            "MODEL",
             "read",
             [int(emp_id)],
             {"fields": READ_FIELDS},
