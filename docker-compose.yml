@@ -15,7 +15,7 @@ services:
       - ODOO_URL=${ODOO_URL:-http://host.docker.internal:8069}
       - ODOO_DB=${ODOO_DB:-naseni}
       - ODOO_USERNAME=${ODOO_USERNAME:-admin}
-      - ODOO_PASSWORD=${ODOO_PASSWORD:-admin}
+      - ODOO_PASSWORD=${ODOO_PASSWORD:-nas123@}
     volumes:
       - .:/app
     working_dir: /app

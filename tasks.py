@@ -25,10 +25,10 @@ NAME = "NAME"
 PEN_NUMBER = "PEN NUMBER"
 NOT_FOUND = []
 READ_FIELDS = ["name", "pension_pin", "employee_no"]
-ODOO_URL = os.getenv("ODOO_URL", "http://localhost:8069")
-ODOO_DB = os.getenv("ODOO_DB", "naseni")
-ODOO_USERNAME = os.getenv("ODOO_USERNAME", "admin")
-ODOO_PASSWORD = os.getenv("ODOO_PASSWORD", "nas123@")
+ODOO_URL = os.getenv("ODOO_URL")
+ODOO_DB = os.getenv("ODOO_DB")
+ODOO_USERNAME = os.getenv("ODOO_USERNAME")
+ODOO_PASSWORD = os.getenv("ODOO_PASSWORD")
 MODEL = "hr.employee"
 REDIS_URL = os.getenv("CELERY_BROKER_URL", "redis://redis:6379/0")
 REDIS_PROGRESS_KEY = f"pen-update:{MODEL}:progress"
@@ -56,6 +56,11 @@ def splittor(rs):
 
 def try_connect_with_retry(attempts=10, initial_delay=1, max_delay=30):
     for attempt in range(1, attempts + 1):
+        _logger.info("Attempting to connect with the ff credentials.....")
+        _logger.info(f"URL: {ODOO_URL}")
+        _logger.info(f"PWD: {ODOO_PASSWORD}")
+        _logger.info(f"USERNAME: {ODOO_USERNAME}")
+        _logger.info(f"DB: {ODOO_DB}")
         try:
             return authenticate(ODOO_URL, ODOO_DB, ODOO_USERNAME, ODOO_PASSWORD)
         except (
@@ -77,6 +82,8 @@ def try_connect_with_retry(attempts=10, initial_delay=1, max_delay=30):
 @app.task(bind=True, max_retries=5)
 def process_chunk(self, chunk_rows):
     uid, models, db, password = try_connect_with_retry()
+    _logger.info(f"Connection results: {uid}, {models}, {db}, {password}...")
+
     redis_client = get_redis_client()
 
     def log_memory_usage(note=""):
@@ -115,6 +122,7 @@ def process_chunk(self, chunk_rows):
 @app.task
 def main():
     uid, models, db, password = try_connect_with_retry()
+    _logger.info(f"Connection results1: {uid}, {models}, {db}, {password}...")
     wb = openpyxl.load_workbook("./data/pension_data.xlsx", read_only=True)
     sheet = wb.active
 
@@ -130,7 +138,7 @@ def main():
 
     values_to_update = []
 
-    for _, IPPIS_NO, NAME, PEN_NUMBER in all_rows[:10]:
+    for _, IPPIS_NO, NAME, PEN_NUMBER in all_rows:
         if IPPIS_NO is None:
             _logger.warning(f"Skipping row with missing employee number: {NAME}")
             continue
@@ -155,7 +163,7 @@ def main():
             db,
             uid,
             password,
-            "MODEL",
+            MODEL,
             "read",
             [int(emp_id)],
             {"fields": READ_FIELDS},
