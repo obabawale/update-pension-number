@@ -1,0 +1,47 @@
+services:
+  redis:
+    image: redis:7
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis-data:/data
+
+  celery_worker:
+    build: .
+    depends_on:
+      - redis
+    environment:
+      - REDIS_URL=${REDIS_URL:-redis://redis:6379/0}
+      - ODOO_URL=${ODOO_URL:-http://host.docker.internal:8069}
+      - ODOO_DB=${ODOO_DB:-naseni}
+      - ODOO_USERNAME=${ODOO_USERNAME:-admin}
+      - ODOO_PASSWORD=${ODOO_PASSWORD:-admin}
+    volumes:
+      - .:/app
+    working_dir: /app
+    deploy:
+      replicas: 5
+    command:
+      [
+        "celery",
+        "-A",
+        "tasks",
+        "worker",
+        "--loglevel=info",
+        "--concurrency=5",
+        "--hostname=worker@%h",
+      ]
+
+  flower:
+    image: mher/flower
+    depends_on:
+      - redis
+    ports:
+      - "5555:5555"
+    environment:
+      - CELERY_BROKER_URL=redis://redis:6379/0
+      - CELERY_RESULT_BACKEND=redis://redis:6379/0
+      - FLOWER_UNAUTHENTICATED_API=false
+    command: celery --broker=${CELERY_BROKER_URL:-redis://redis:6379/0} flower --port=5555
+volumes:
+  redis-data:
